@@ -4,6 +4,8 @@ from pyspark.sql import SQLContext
 import numpy as np
 from pyspark.sql.window import Window 
 from pyspark.sql import functions as F
+from pyspark.mllib.linalg.distributed import IndexedRow, IndexedRowMatrix
+
 
 
 def main():
@@ -31,7 +33,6 @@ def main():
 	asin_index_df.createOrReplaceTempView("asin_index_table")
 
 
-
 	review_df = sqlContext.sql("SELECT DISTINCT reviewerID FROM review_table")
 	w = Window.orderBy("reviewerID") 
 	review_index_df = review_df.withColumn("index", F.row_number().over(w))
@@ -56,12 +57,13 @@ def main():
 
 	
 	# make a new review table with only (reviewerID, reviewer_index, asin, asin_index, overall)
-	review_with_index_df = sqlContext.sql \
+	summary_df = sqlContext.sql \
 	("SELECT review_table.reviewerID, review_index_table.index AS reviewer_index, review_table.asin, asin_index_table.index AS asin_index, review_table.overall \
 	 FROM review_table, asin_index_table, review_index_table WHERE review_table.asin = asin_index_table.asin AND review_table.reviewerID = review_index_table.reviewerID")
+	summary_df.createOrReplaceTempView("summary_table")
 
 	# Ratings : RDD((u, i, rui), . . .)
-	ratings_rdd = review_with_index_df.select("reviewer_index", "asin_index", "overall").rdd
+	ratings_rdd = summary_df.select("reviewer_index", "asin_index", "overall").rdd
 
 	# First map RDD, (i, (u, rui)). Cached for optimization.
 	ratings_rdd_itemkey = ratings_rdd.map(lambda x: (x[0], (x[1], x[2]))).cache()
@@ -150,13 +152,65 @@ def main():
 	X.saveAsTextFile("X")
 	Y.saveAsTextFile("Y")
 	# Generate movie recommendations for (user, movie) pairs. 
-	# print(sc.parallelize(X.top(2)).top(2))
 	# Select 100 users and 100 movies to make recommendations
-	X_100_join_Y_100_rdd = sc.parallelize(X.top(100)).map(lambda x : (x[0], x[1].tolist())).cartesian(sc.parallelize(Y.top(100)).map(lambda x : (x[0], x[1].tolist())))
 
-	X_100_join_Y_100_rdd = X_100_join_Y_100_rdd.map(lambda x: (x[0][0], x[1][0], np.array(x[0][1]).T.dot(np.array(x[1][1]))[0][0]))
+	X_100_join_Y_100_rdd = sc.parallelize(X.top(10)).map(lambda x : (x[0], x[1].tolist())).cartesian(sc.parallelize(Y.top(100)).map(lambda x : (x[0], x[1].tolist())))
 
-	X_100_join_Y_100_rdd.repartition(10).saveAsTextFile("Predictions")
+	X_100_join_Y_100_rdd = X_100_join_Y_100_rdd.map(lambda x: (x[0][0], x[1][0], np.array(x[0][1]).T.dot(np.array(x[1][1]))[0][0].item()))
+
+
+	X_100_join_Y_100_df = X_100_join_Y_100_rdd.toDF()
+	X_100_join_Y_100_df = X_100_join_Y_100_df.withColumnRenamed("_1", "reviewer_index") \
+	.withColumnRenamed("_2", "asin_index") \
+	.withColumnRenamed("_3", "predicted_overall")
+	X_100_join_Y_100_df.createOrReplaceTempView("X_100_join_Y_100_table")
+
+	X_100_join_Y_100_df = sqlContext.sql("SELECT a.reviewer_index, a.asin_index, b.asin, a.predicted_overall \
+										FROM X_100_join_Y_100_table AS a, asin_index_table AS b \
+										WHERE a.asin_index = b.index")
+
+	X_100_join_Y_100_df.repartition(1).write.option("header", "true").csv("Prediction100")
+	
+
+
+	######## Evaluate Training RMSE Score Using the Existing Ratings ########
+	Xdf = X.map(lambda x : (x[0], x[1].tolist())).toDF()
+	# Assigning column names directly in toDF() throws exception.
+	Xdf = Xdf.withColumnRenamed("_1", "reviewer_index")
+	Xdf = Xdf.withColumnRenamed("_2", "reviewer_latent_vector")
+	Xdf.createOrReplaceTempView("X_table")
+
+	Ydf = Y.map(lambda x : (x[0], x[1].tolist())).toDF()
+	Ydf = Ydf.withColumnRenamed("_1", "asin_index")
+	Ydf = Ydf.withColumnRenamed("_2", "asin_latent_vector")
+	Ydf.createOrReplaceTempView("Y_table")
+
+	XY_df = sqlContext.sql("SELECT a.reviewer_index, b.asin_index, c.asin, a.reviewer_latent_vector, b.asin_latent_vector, c.overall \
+						FROM X_table AS a, Y_table AS b, summary_table as c \
+						WHERE a.reviewer_index = c.reviewer_index AND b.asin_index = c.asin_index")
+
+	XY_df.createOrReplaceTempView("XY_table")
+
+
+	XY_prediction_df = XY_df.rdd.map(lambda x : (x[0], x[1], np.array(x[3]).T.dot(np.array(x[4]))[0][0].item())).toDF()
+
+	XY_prediction_df = XY_prediction_df.withColumnRenamed("_1", "reviewer_index") \
+	.withColumnRenamed("_2", "asin_index") \
+	.withColumnRenamed("_3", "predicted_overall")
+
+	XY_prediction_df.createOrReplaceTempView("XY_prediction_table")
+
+	XY_df = sqlContext.sql("SELECT a.reviewer_index, a.asin_index, a.asin, a.overall, b.predicted_overall \
+						FROM XY_table AS a, XY_prediction_table AS b \
+						WHERE a.reviewer_index = b.reviewer_index AND a.asin_index = b.asin_index")
+
+	XY_df.createOrReplaceTempView("XY_table")
+
+	XY_df.write.option("header", "true").csv("XY")
+
+	error, count = XY_df.rdd.map(lambda x: (float(x[3])-float(x[4]), 1)).reduce(lambda x, y: (x[0]+y[0], x[1]+y[1]))
+	rmse = float(error) / float(count)
+	print("rmse="+str(rmse))
 
 
 if __name__ == "__main__": 
