@@ -10,14 +10,15 @@ def main():
 	### Spark Collaborative filtering using Alternative Least Square
 	### http://stanford.edu/~rezab/classes/cme323/S15/notes/lec14.pdf
 
-	conf = SparkConf().setMaster('local[*]').setAppName('Review Processor')
+	conf = SparkConf().setAppName('Review Processor')
 	sc = SparkContext(conf = conf)
 	sqlContext = SQLContext(sc)
 
 	# read the review data
-	review_df = sqlContext.read.json('reviews_Video_Games_5.json')
+	review_df = sqlContext.read.json('reviews_Video_Games.json')
 	#review_df = review_df.select("reviewerID", "overall", "asin").orderBy('reviewerID', ascending=True)
 	review_df.createOrReplaceTempView("review_table")
+
 
 
 	# create an index table of asin->id and reviewerID->id
@@ -26,16 +27,20 @@ def main():
 	asin_index_df = asin_df.withColumn("index", F.row_number().over(w)) # This is one indexing
 	asin_index_df.createOrReplaceTempView("asin_index_table")
 
+	asin_df.coalesce(1).write.format('json').save('asin_df.json')
+
 
 	review_df = sqlContext.sql("SELECT DISTINCT reviewerID FROM review_table")
 	w = Window.orderBy("reviewerID") 
 	review_index_df = review_df.withColumn("index", F.row_number().over(w)) # This is one indexing
 	review_index_df.createOrReplaceTempView("review_index_table")
 
+	review_index_df.coalesce(1).write.format('json').save('review_index_df.json')
 
 	# count how many products and how many users
 	num_distinct_asins_df = sqlContext.sql("SELECT COUNT(asin) as num_distinct_asins FROM asin_index_table")
 	num_distinct_reviewerIDs_df = sqlContext.sql("SELECT COUNT(reviewerID) as num_distinct_reviewerIDs FROM review_index_table")
+
 
 	#num_distinct_asins_df.write.option("header", "true").csv("total_asin_count")
 	#num_distinct_reviewerIDs_df.write.option("header", "true").csv("total_reviewerID_count")
@@ -75,6 +80,7 @@ def main():
 	df_matrix = sqlContext.createDataFrame(rdd).toDF("reviewer_index", "ratings")
 	df_matrix.createOrReplaceTempView("review_matrix_table")
 
+	df_matrix.coalesce(1).write.format('json').save('df_matrix.json')
 	# Calculate the pairwise similarity score for a particular user and filter out the top 10 
 	# First, use the first user in the rdd as an example user
 	sample_user = rdd.top(1)[0]
@@ -90,10 +96,31 @@ def main():
 	df_similarity = sqlContext.createDataFrame(rdd).toDF("similarity", "reviewer_index1", "reviewer_index2")
 	df_similarity.createOrReplaceTempView("reviewer_similarity_table")
 
-	df_similarity.show()
+	df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
 
-	# Fetch the 
+	rating_mat = np.array(df_matrix.sort("reviewer_index", ascending = True).select("ratings")).reshape(total_reviewerID_count, total_asin_count)
+	def g_score(x):
+		#df_temp = np.array(df_similarity.filter("similrity != review_id").select("similarity").collect())
+		#ratings = np.array(x[1])
+		review_id = x[0]
+		S = np.array(df_similarity.filter("reviewer_index1 == review_id").sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
+		row = []
 
+
+		for i in range(total_asin_count):
+			ratings = rating_mat[:,i].reshape(total_reviewerID_count)
+			ratings = np.delete(ratings, review_id)
+			row.append(np.dot(ratings, S)/np.sum(S))
+			
+		return (review_id, row)
+
+
+
+	# Fetch the 	
+	rdd_g_score = df_matrix.rdd.map(g_score)
+	df_g_score = sqlContext.createDataFrame(rdd_g_score).toDF("reviewer_id", "g_score_vector")
+
+	df_g_score.coalesce(1).write.format('json').save('df_g_score.json')
 	#review_with_index_df.repartition(1).write.option("header", "false").csv("processed_reviews")
 
 
