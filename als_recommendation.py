@@ -5,6 +5,8 @@ import numpy as np
 from pyspark.sql.window import Window 
 from pyspark.sql import functions as F
 from pyspark.mllib.linalg.distributed import IndexedRow, IndexedRowMatrix
+import sys
+
 
 
 
@@ -12,17 +14,18 @@ def main():
 	### Spark Collaborative filtering using Alternative Least Square
 	### http://stanford.edu/~rezab/classes/cme323/S15/notes/lec14.pdf
 
-	conf = SparkConf().setMaster('local[*]').setAppName('Review Processor')
+	conf = SparkConf().setAppName('Alternating Least Squares')
 	sc = SparkContext(conf = conf)
 	sqlContext = SQLContext(sc)
 
 	# Some hyperparameters
-	k = 10 # The latent dimension
-	lambda_ = 0.9 # The regulizer.
-	epochs = 1 # The number of iterations
+	k = 20 # The latent dimension
+	lambda_ = 1 # The regularizer.
+	epochs = 15 # The number of iterations
 
+	file = sys.argv[1]
 	# read the review data
-	review_df = sqlContext.read.json('reviews_Video_Games_5.json')
+	review_df = sqlContext.read.json(file)
 	#review_df = review_df.select("reviewerID", "overall", "asin").orderBy('reviewerID', ascending=True)
 	review_df.createOrReplaceTempView("review_table")
 
@@ -169,11 +172,10 @@ def main():
 										FROM X_100_join_Y_100_table AS a, asin_index_table AS b \
 										WHERE a.asin_index = b.index")
 
-	X_100_join_Y_100_df.repartition(1).write.option("header", "true").csv("Prediction100")
-	
+	X_100_join_Y_100_df.write.option("header", "true").csv("Prediction100")
 
 
-	######## Evaluate Training RMSE Score Using the Existing Ratings ########
+	######## Evaluate Training Mean Absolute Error Score Using the Existing Ratings ########
 	Xdf = X.map(lambda x : (x[0], x[1].tolist())).toDF()
 	# Assigning column names directly in toDF() throws exception.
 	Xdf = Xdf.withColumnRenamed("_1", "reviewer_index")
@@ -190,6 +192,8 @@ def main():
 						WHERE a.reviewer_index = c.reviewer_index AND b.asin_index = c.asin_index")
 
 	XY_df.createOrReplaceTempView("XY_table")
+	XY_df.rdd.map(lambda x:(x[3], x[4], x[5])).saveAsTextFile("XY_train")
+
 
 
 	XY_prediction_df = XY_df.rdd.map(lambda x : (x[0], x[1], np.array(x[3]).T.dot(np.array(x[4]))[0][0].item())).toDF()
@@ -208,9 +212,9 @@ def main():
 
 	XY_df.write.option("header", "true").csv("XY")
 
-	error, count = XY_df.rdd.map(lambda x: (float(x[3])-float(x[4]), 1)).reduce(lambda x, y: (x[0]+y[0], x[1]+y[1]))
+	error, count = XY_df.rdd.map(lambda x: (np.abs(float(x[3])-float(x[4])), 1)).reduce(lambda x, y: (x[0]+y[0], x[1]+y[1]))
 	rmse = float(error) / float(count)
-	print("rmse="+str(rmse))
+	print("Mean Absolute Error="+str(rmse))
 
 
 if __name__ == "__main__": 
