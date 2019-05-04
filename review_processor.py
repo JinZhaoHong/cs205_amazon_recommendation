@@ -15,7 +15,7 @@ def main():
 	sqlContext = SQLContext(sc)
 
 	# read the review data
-	review_df = sqlContext.read.json('reviews_Video_Games.json')
+	review_df = sqlContext.read.json('Musical_Instruments_5.json')
 	#review_df = review_df.select("reviewerID", "overall", "asin").orderBy('reviewerID', ascending=True)
 	review_df.createOrReplaceTempView("review_table")
 
@@ -27,7 +27,7 @@ def main():
 	asin_index_df = asin_df.withColumn("index", F.row_number().over(w)) # This is one indexing
 	asin_index_df.createOrReplaceTempView("asin_index_table")
 
-	asin_df.coalesce(1).write.format('json').save('asin_df.json')
+	#asin_df.coalesce(1).write.format('json').save('asin_df.json')
 
 
 	review_df = sqlContext.sql("SELECT DISTINCT reviewerID FROM review_table")
@@ -35,7 +35,7 @@ def main():
 	review_index_df = review_df.withColumn("index", F.row_number().over(w)) # This is one indexing
 	review_index_df.createOrReplaceTempView("review_index_table")
 
-	review_index_df.coalesce(1).write.format('json').save('review_index_df.json')
+	#review_index_df.coalesce(1).write.format('json').save('review_index_df.json')
 
 	# count how many products and how many users
 	num_distinct_asins_df = sqlContext.sql("SELECT COUNT(asin) as num_distinct_asins FROM asin_index_table")
@@ -80,7 +80,7 @@ def main():
 	df_matrix = sqlContext.createDataFrame(rdd).toDF("reviewer_index", "ratings")
 	df_matrix.createOrReplaceTempView("review_matrix_table")
 
-	df_matrix.coalesce(1).write.format('json').save('df_matrix.json')
+	#df_matrix.coalesce(1).write.format('json').save('df_matrix.json')
 	# Calculate the pairwise similarity score for a particular user and filter out the top 10 
 	# First, use the first user in the rdd as an example user
 	sample_user = rdd.top(1)[0]
@@ -96,7 +96,17 @@ def main():
 	df_similarity = sqlContext.createDataFrame(rdd).toDF("similarity", "reviewer_index1", "reviewer_index2")
 	df_similarity.createOrReplaceTempView("reviewer_similarity_table")
 
-	df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
+	#df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
+
+	df_top10 = rdd.top(10).toDF("similarity", "reviewer_index1", "reviewer_index2")
+	df_to10.createOrReplaceTempView("top10_table")
+
+	top10_similar = sqlContext.sql \
+	("SELECT top10_table.reviewer_index1, review_matrix_table.ratings\
+	 FROM top10_table, review_matrix_table WHERE top10_table.reviewer_index1 = review_matrix_table.reviewer_index \
+	 ORDER BY review_matrix_table.reviewer_index")
+
+	top10_similar.show()
 
 	rating_mat = np.array(df_matrix.sort("reviewer_index", ascending = True).select("ratings")).reshape(total_reviewerID_count, total_asin_count)
 	def g_score(x):
@@ -120,7 +130,7 @@ def main():
 	rdd_g_score = df_matrix.rdd.map(g_score)
 	df_g_score = sqlContext.createDataFrame(rdd_g_score).toDF("reviewer_id", "g_score_vector")
 
-	df_g_score.coalesce(1).write.format('json').save('df_g_score.json')
+	#df_g_score.coalesce(1).write.format('json').save('df_g_score.json')
 	#review_with_index_df.repartition(1).write.option("header", "false").csv("processed_reviews")
 
 
