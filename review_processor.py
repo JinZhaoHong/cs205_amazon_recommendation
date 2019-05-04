@@ -107,11 +107,13 @@ def main():
 	 ORDER BY review_matrix_table.reviewer_index")
 	top10_ratings.createOrReplaceTempView("top_rating")
 
-	top_reviewer = list(top10_ratings.select(reviewer_index))
+	top_reviewer = list(top10_ratings.select("reviewer_index"))
 
-	top10_cross_similarity = top10_ratings.filter(top10_ratings["reviewer_index1"].isin(top_reviewer) & top10_ratings["reviewer_index1"].isin(top_reviewer)).collect()
+	top10_cross_similarity = df_similarity.filter(df_similarity["reviewer_index1"].isin(top_reviewer) & df_similarity["reviewer_index2"].isin(top_reviewer)).collect()
 
 	top10_cross_similarity.show()
+
+
 
 
 
@@ -120,7 +122,7 @@ def main():
 		#df_temp = np.array(df_similarity.filter("similrity != review_id").select("similarity").collect())
 		#ratings = np.array(x[1])
 		review_id = x[0]
-		S = np.array(df_similarity.filter("reviewer_index1 == review_id").sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
+		S = np.array(df_similarity.filter("reviewer_index1 == review_id" & df_similarity["reviewer_index1"].isin(top_reviewer)).sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
 		row = []
 
 
