@@ -99,7 +99,7 @@ def main():
 	#df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
 
 	df_top10 = sqlContext.createDataFrame(sc.parallelize(rdd.top(10))).toDF("similarity", "reviewer_index1", "reviewer_index2")
-	df_to10.createOrReplaceTempView("top10_table")
+	df_top10.createOrReplaceTempView("top10_table")
 
 	top10_similar = sqlContext.sql \
 	("SELECT top10_table.reviewer_index1, review_matrix_table.ratings\
