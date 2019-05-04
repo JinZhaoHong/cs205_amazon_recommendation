@@ -109,7 +109,7 @@ def main():
 
 	top_reviewer = list(top10_ratings.select("reviewer_index"))
 
-	top10_cross_similarity = df_similarity.filter(df_similarity["reviewer_index1"].isin(top_reviewer) & df_similarity["reviewer_index2"].isin(top_reviewer)).collect()
+	top10_cross_similarity = df_similarity.filter(df_similarity["reviewer_index1"].isin(top_reviewer)).collect()
 
 	top10_cross_similarity.show()
 
