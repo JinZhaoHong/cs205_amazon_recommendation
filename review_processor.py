@@ -98,7 +98,7 @@ def main():
 
 	#df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
 
-	df_top10 = rdd.top(10).toDF("similarity", "reviewer_index1", "reviewer_index2")
+	df_top10 = sc.parallelize(rdd.top(10)).toDF("similarity", "reviewer_index1", "reviewer_index2")
 	df_to10.createOrReplaceTempView("top10_table")
 
 	top10_similar = sqlContext.sql \
@@ -107,6 +107,8 @@ def main():
 	 ORDER BY review_matrix_table.reviewer_index")
 
 	top10_similar.show()
+
+
 
 	rating_mat = np.array(df_matrix.sort("reviewer_index", ascending = True).select("ratings")).reshape(total_reviewerID_count, total_asin_count)
 	def g_score(x):
