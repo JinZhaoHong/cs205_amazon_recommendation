@@ -101,12 +101,17 @@ def main():
 	df_top10 = sqlContext.createDataFrame(sc.parallelize(rdd.top(10))).toDF("similarity", "reviewer_index1", "reviewer_index2")
 	df_top10.createOrReplaceTempView("top10_table")
 
-	top10_similar = sqlContext.sql \
-	("SELECT top10_table.reviewer_index1, review_matrix_table.ratings\
+	top10_ratings = sqlContext.sql \
+	("SELECT top10_table.reviewer_index1 AS reviewer_index, review_matrix_table.ratings\
 	 FROM top10_table, review_matrix_table WHERE top10_table.reviewer_index1 = review_matrix_table.reviewer_index \
 	 ORDER BY review_matrix_table.reviewer_index")
+	top10_ratings.createOrReplaceTempView("top_rating")
 
-	top10_similar.show()
+	top_reviewer = list(top10_ratings.select(reviewer_index))
+
+	top10_cross_similarity = top10_ratings.filter(top10_ratings["reviewer_index1"].isin(top_reviewer) & top10_ratings["reviewer_index1"].isin(top_reviewer)).collect()
+
+	top10_cross_similarity.show()
 
 
 
