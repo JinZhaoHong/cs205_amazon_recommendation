@@ -91,15 +91,6 @@ def main():
 		cosine_similarity = a.dot(b) / (np.linalg.norm(a)*np.linalg.norm(b))
 		return (cosine_similarity, (x[0], sample_user[0]))
 
-	#rdd = rdd.map(cosine_similarity).sortByKey(False).map(lambda x: (x[0].item(), x[1][0], x[1][1]))
-
-	#df_similarity = sqlContext.createDataFrame(rdd).toDF("similarity", "reviewer_index1", "reviewer_index2").sort("reviewer_index1", ascending = True)
-	#df_similarity.createOrReplaceTempView("reviewer_similarity_table")
-
-
-
-	
-	#top_reviewer = list(top10_ratings.select("reviewer_index").collect())
 
 	rdd_asin = review_with_index_df.rdd.map(lambda x: (x[3], [(x[1], x[4])])).reduceByKey(lambda a, b : a + b)
 
@@ -143,10 +134,6 @@ def main():
 	rdd_sim = rdd.map(similar)
 	df_matrix_sim= sqlContext.createDataFrame(rdd_sim).toDF("reviewer_index", "Similarity").sort("reviewer_index", ascending = True)
 
-	#df_matrix_asin.show()
-	
-	#del ratings_array
-
 	ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
 
 
@@ -167,44 +154,6 @@ def main():
 
 	df_g_score.show()
 
-
-
-	'''
-
-	for i in range(total_asin_count):
-		r = df_matrix_asin.filter(df_matrix_asin.asin_index == i).first()[1]
-
-			
-		row.append(np.dot(r, S)/np.sum(S))
-
-	print(row, "edsdsd")
-	#review_with_index_df_asin.show()
-
-	def g_score(x):
-		#df_temp = np.array(df_similarity.filter("similrity != review_id").select("similarity").collect())
-		#ratings = np.array(x[1])
-		review_id = x[0]
-		#S = np.array(df_similarity.filter("reviewer_index1 == review_id").sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
-		
-		row = []
-		S = np.array((top10_cross_similarity.select("similarity").collect())).flatten()
-
-		for i in range(total_asin_count):
-			r = df_matrix_asin.filter("asin_index" == i).first()[1]
-
-			
-			row.append(np.dot(r, S)/np.sum(S))
-			
-		return (review_id, row)
-
-
-
-	# Fetch the 	
-	rdd_g_score = df_matrix.rdd.map(g_score)
-	df_g_score = sqlContext.createDataFrame(rdd_g_score).toDF("reviewer_id", "g_score_vector")
-
-	#df_g_score.coalesce(1).write.format('json').save('df_g_score.json')
-	#review_with_index_df.repartition(1).write.option("header", "false").csv("processed_reviews")
 
 '''
 
