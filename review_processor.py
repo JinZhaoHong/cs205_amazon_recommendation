@@ -91,47 +91,109 @@ def main():
 		cosine_similarity = a.dot(b) / (np.linalg.norm(a)*np.linalg.norm(b))
 		return (cosine_similarity, (x[0], sample_user[0]))
 
-	rdd = rdd.map(cosine_similarity).sortByKey(False).map(lambda x: (x[0].item(), x[1][0], x[1][1]))
+	#rdd = rdd.map(cosine_similarity).sortByKey(False).map(lambda x: (x[0].item(), x[1][0], x[1][1]))
 
-	df_similarity = sqlContext.createDataFrame(rdd).toDF("similarity", "reviewer_index1", "reviewer_index2")
-	df_similarity.createOrReplaceTempView("reviewer_similarity_table")
-
-	#df_similarity.coalesce(1).write.format('json').save('df_similarity.json')
-
-	df_top10 = sqlContext.createDataFrame(sc.parallelize(rdd.top(10))).toDF("similarity", "reviewer_index1", "reviewer_index2")
-	df_top10.createOrReplaceTempView("top10_table")
-
-	top10_ratings = sqlContext.sql \
-	("SELECT top10_table.reviewer_index1 AS reviewer_index, review_matrix_table.ratings\
-	 FROM top10_table, review_matrix_table WHERE top10_table.reviewer_index1 = review_matrix_table.reviewer_index \
-	 ORDER BY review_matrix_table.reviewer_index")
-	top10_ratings.createOrReplaceTempView("top_rating")
-
-	top_reviewer = list(top10_ratings.select("reviewer_index"))
-	#print(top_reviewer)
-	l = [10,18,20]
-
-	top10_cross_similarity = df_similarity.filter(df_similarity.reviewer_index1.isin(l))
-
-	top10_cross_similarity.show()
+	#df_similarity = sqlContext.createDataFrame(rdd).toDF("similarity", "reviewer_index1", "reviewer_index2").sort("reviewer_index1", ascending = True)
+	#df_similarity.createOrReplaceTempView("reviewer_similarity_table")
 
 
 
+	
+	#top_reviewer = list(top10_ratings.select("reviewer_index").collect())
+
+	rdd_asin = review_with_index_df.rdd.map(lambda x: (x[3], [(x[1], x[4])])).reduceByKey(lambda a, b : a + b)
+
+	def map_function_asin(x):
+		# x has the format (asin_index, [(reviewer_index1, overall1), (reviewer_index2, overall2)])
+		row = []
+		# First make all reviews 0
+		for i in range(total_reviewerID_count):
+			row.append(0)
+		# The fill in actual user reviews
+		#reviews = 
+
+		for review in x[1]:
+
+			index = int(review[0]) - 1 #find the index in the list
+			rating = int(review[1])
+			row[index] = rating
+		return (x[0], row)
+
+	rdd_asin = rdd_asin.map(map_function_asin)
+
+	df_matrix_asin = sqlContext.createDataFrame(rdd_asin).toDF("asin_index", "ratings").sort("asin_index", ascending = True)
+	df_matrix_asin.createOrReplaceTempView("review_matrix_table_asin")
+
+	#df_matrix_asin.show()
+	ratings_array = np.array(df_matrix.select("ratings").collect()).squeeze()
+	#print(ratings_array[1], "dsds")
+
+	def similar(x):
+		a = np.array(x[1]).flatten()
+		row = []
+		for i in range(total_reviewerID_count):
+
+			#b = ratings_array[i]
+			b = ratings_array[i]
+			cosine_similarity = float(a.dot(b) / (np.linalg.norm(a)*np.linalg.norm(b)))
+			row.append(cosine_similarity)
+			#row.append(1)
+		return (x[0], row)
+
+	rdd_sim = rdd.map(similar)
+	df_matrix_sim= sqlContext.createDataFrame(rdd_sim).toDF("reviewer_index", "Similarity").sort("reviewer_index", ascending = True)
+
+	#df_matrix_asin.show()
+	
+	#del ratings_array
+
+	ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
 
 
-	rating_mat = np.array(df_matrix.sort("reviewer_index", ascending = True).select("ratings")).reshape(total_reviewerID_count, total_asin_count)
+	def g_score(x):
+		similarity = np.array(x[1]).flatten()
+		s = np.sum(similarity)
+		row = []
+		for i in range(total_asin_count):
+			ratings_asin = ratings_by_asin[i]
+			score = float(np.dot(similarity, ratings_asin)/s)
+			row.append(score)
+
+		#print(row, "sdsdf")
+		return (x[0], row)
+
+	rdd_score = rdd_sim.map(g_score)
+	df_g_score = sqlContext.createDataFrame(rdd_score).toDF("reviewer_index", "g_score_vector").sort("reviewer_index", ascending = True)
+
+	df_g_score.show()
+
+
+
+	'''
+
+	for i in range(total_asin_count):
+		r = df_matrix_asin.filter(df_matrix_asin.asin_index == i).first()[1]
+
+			
+		row.append(np.dot(r, S)/np.sum(S))
+
+	print(row, "edsdsd")
+	#review_with_index_df_asin.show()
+
 	def g_score(x):
 		#df_temp = np.array(df_similarity.filter("similrity != review_id").select("similarity").collect())
 		#ratings = np.array(x[1])
 		review_id = x[0]
-		S = np.array(df_similarity.filter("reviewer_index1 == review_id").sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
+		#S = np.array(df_similarity.filter("reviewer_index1 == review_id").sort("reviewer_index2", ascending=True).select("similarity").collect()).flatten()
+		
 		row = []
-
+		S = np.array((top10_cross_similarity.select("similarity").collect())).flatten()
 
 		for i in range(total_asin_count):
-			ratings = rating_mat[:,i].reshape(total_reviewerID_count)
-			ratings = np.delete(ratings, review_id)
-			row.append(np.dot(ratings, S)/np.sum(S))
+			r = df_matrix_asin.filter("asin_index" == i).first()[1]
+
+			
+			row.append(np.dot(r, S)/np.sum(S))
 			
 		return (review_id, row)
 
@@ -144,7 +206,7 @@ def main():
 	#df_g_score.coalesce(1).write.format('json').save('df_g_score.json')
 	#review_with_index_df.repartition(1).write.option("header", "false").csv("processed_reviews")
 
-
+'''
 
 if __name__ == "__main__": 
 	main()
