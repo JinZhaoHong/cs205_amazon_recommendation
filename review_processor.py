@@ -15,7 +15,7 @@ def main():
 	sqlContext = SQLContext(sc)
 
 	# read the review data
-	review_df = sqlContext.read.json('Musical_Instruments_5.json')
+        review_df = sqlContext.read.json('reviews_Movies_and_TV_5.json')
 	#review_df = review_df.select("reviewerID", "overall", "asin").orderBy('reviewerID', ascending=True)
 	review_df.createOrReplaceTempView("review_table")
 
@@ -118,15 +118,15 @@ def main():
 	#df_matrix_asin.show()
 	#ratings_array = np.array(df_matrix.select("ratings").collect()).squeeze()
 	#print(ratings_array[1], "dsds")
-	df_matrix.filter(df_matrix.reviewer_index ==  1).show()
-	b = np.array(df_matrix.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
+        #df_matrix.filter(df_matrix.reviewer_index ==  1).show()
+	#b = np.array(df_matrix.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
 	#print(b.shape,"sads")
 	def similar(x):
 		a = np.array(x[1]).flatten()
 		row = []
 		for i in range(total_reviewerID_count):
 
-			#b = ratings_array[i]
+			b = a
 			#
 			cosine_similarity = float(a.dot(b) / (np.linalg.norm(a)*np.linalg.norm(b)))
 			row.append(cosine_similarity)
@@ -135,26 +135,27 @@ def main():
 
 	rdd_sim = rdd.map(similar)
 	df_matrix_sim= sqlContext.createDataFrame(rdd_sim).toDF("reviewer_index", "Similarity").sort("reviewer_index", ascending = True)
-
+        #df_matrix_sim.show()
 	#ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
-	ratings_asin = np.array(df_matrix_asin.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
+        print("check1")
+	ratings_asin = np.array(df_matrix_asin.filter(df_matrix_asin.asin_index == 1).select("ratings").collect()).squeeze()
 
 	def g_score(x):
 		similarity = np.array(x[1]).flatten()
 		s = np.sum(similarity)
 		row = []
 		for i in range(total_asin_count):
-			#ratings_asin = ratings_by_asin[i]
+			ratings_asin = similarity
 			score = float(np.dot(similarity, ratings_asin)/s)
 			row.append(score)
 
 		#print(row, "sdsdf")
 		return (x[0], row)
-
+        print("check2")
 	rdd_score = rdd_sim.map(g_score)
 	df_g_score = sqlContext.createDataFrame(rdd_score).toDF("reviewer_index", "g_score_vector").sort("reviewer_index", ascending = True)
 
-	df_g_score.show()
+	#df_g_score.show()
 
 
 
