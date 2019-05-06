@@ -116,16 +116,18 @@ def main():
 	df_matrix_asin.createOrReplaceTempView("review_matrix_table_asin")
 
 	#df_matrix_asin.show()
-	ratings_array = np.array(df_matrix.select("ratings").collect()).squeeze()
+	#ratings_array = np.array(df_matrix.select("ratings").collect()).squeeze()
 	#print(ratings_array[1], "dsds")
-
+	df_matrix.filter(df_matrix.reviewer_index ==  1).show()
+	b = np.array(df_matrix.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
+	#print(b.shape,"sads")
 	def similar(x):
 		a = np.array(x[1]).flatten()
 		row = []
 		for i in range(total_reviewerID_count):
 
 			#b = ratings_array[i]
-			b = ratings_array[i]
+			#
 			cosine_similarity = float(a.dot(b) / (np.linalg.norm(a)*np.linalg.norm(b)))
 			row.append(cosine_similarity)
 			#row.append(1)
@@ -134,15 +136,15 @@ def main():
 	rdd_sim = rdd.map(similar)
 	df_matrix_sim= sqlContext.createDataFrame(rdd_sim).toDF("reviewer_index", "Similarity").sort("reviewer_index", ascending = True)
 
-	ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
-
+	#ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
+	ratings_asin = np.array(df_matrix_asin.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
 
 	def g_score(x):
 		similarity = np.array(x[1]).flatten()
 		s = np.sum(similarity)
 		row = []
 		for i in range(total_asin_count):
-			ratings_asin = ratings_by_asin[i]
+			#ratings_asin = ratings_by_asin[i]
 			score = float(np.dot(similarity, ratings_asin)/s)
 			row.append(score)
 
