@@ -9,6 +9,8 @@ import keras.backend as K
 import numpy as np
 from os import listdir
 from os.path import isfile, join
+import sys
+
 
 
 path = sys.argv[1]
@@ -58,7 +60,7 @@ print("Building Dense NN...")
 
 
 model = Sequential()
-model.add(Dense(200, input_dim=20, activation='relu'))
+model.add(Dense(200, input_dim=X_train.shape[1], activation='relu'))
 model.add(Dense(200, activation='relu'))
 model.add(Dense(1))
 
@@ -67,7 +69,7 @@ print(model.summary())
 
 adam = keras.optimizers.Adam(lr=0.001, beta_1=0.9, beta_2=0.999, epsilon=None, decay=0.0, amsgrad=False)
 model.compile(loss='mean_absolute_error', optimizer=adam, metrics=['accuracy'])
-model.fit(X_train, Y_train, epochs=100, batch_size=2048)
+model.fit(X_train, Y_train, epochs=30, batch_size=2048)
 
 print("Predicting ratings...")
 
@@ -78,10 +80,13 @@ MAE = np.sum(np.abs(Y_predict - Y_train)) / Y_predict.shape[0]
  
 print("The Mean Absolute Error for Nerual Network Is: " + str(MAE))
 
-Y_predict2 = np.sum(X_train[:, :X_train.shape[0]/2] * X_train[:, X_train.shape[0]/2:X_train.shape[0]], axis=1)
+i = int(float(X_train.shape[1])/2.0)
+j = int(X_train.shape[1])
+
+Y_predict2 = np.sum((X_train[:, :i] * X_train[:, i:j]), axis=1)
 MAE2 = np.sum(np.abs(Y_predict2 - Y_train)) / Y_predict.shape[0]
 
-print("The Mean Absolute Error for Simple Dot Product: " + str(MAE))
+print("The Mean Absolute Error for Simple Dot Product: " + str(MAE2))
 
 
 
