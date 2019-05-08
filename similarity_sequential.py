@@ -4,21 +4,23 @@ from pyspark.sql import SQLContext
 import numpy as np
 from pyspark.sql.window import Window 
 from pyspark.sql import functions as F
+import sys
+
 
 
 def main():
 	### Spark Collaborative filtering using Alternative Least Square
 	### http://stanford.edu/~rezab/classes/cme323/S15/notes/lec14.pdf
 
-	conf = SparkConf().setAppName('Review Processor')
+	conf = SparkConf().setMaster('local').setAppName('Collaborative Filtering Similarity and P-score')
 	sc = SparkContext(conf = conf)
 	sqlContext = SQLContext(sc)
 
 	# read the review data
-    review_df = sqlContext.read.json('reviews_Movies_and_TV_5.json')
+	file = sys.argv[1]
+	review_df = sqlContext.read.json(file)
 	#review_df = review_df.select("reviewerID", "overall", "asin").orderBy('reviewerID', ascending=True)
 	review_df.createOrReplaceTempView("review_table")
-
 
 
 	# create an index table of asin->id and reviewerID->id
@@ -118,7 +120,7 @@ def main():
 	#df_matrix_asin.show()
 	ratings_array = np.array(df_matrix.select("ratings").collect()).squeeze()
 	#print(ratings_array[1], "dsds")
-        #df_matrix.filter(df_matrix.reviewer_index ==  1).show()
+	#df_matrix.filter(df_matrix.reviewer_index ==  1).show()
 	#b = np.array(df_matrix.filter(df_matrix.reviewer_index == 1).select("ratings").collect()).squeeze()
 	#print(b.shape,"sads")
 	def similar(x):
@@ -135,9 +137,9 @@ def main():
 
 	rdd_sim = rdd.map(similar)
 	df_matrix_sim= sqlContext.createDataFrame(rdd_sim).toDF("reviewer_index", "Similarity").sort("reviewer_index", ascending = True)
-        #df_matrix_sim.show()
+	df_matrix_sim.show()
 	#ratings_by_asin = np.array(df_matrix_asin.select("ratings").collect()).squeeze()
-        #print("check1")
+	#print("check1")
 	ratings_asin = np.array(df_matrix_asin.filter(df_matrix_asin.asin_index == 1).select("ratings").collect()).squeeze()
 
 	def g_score(x):
@@ -151,11 +153,11 @@ def main():
 
 		#print(row, "sdsdf")
 		return (x[0], row)
-        #print("check2")
+		#print("check2")
 	rdd_score = rdd_sim.map(g_score)
 	df_g_score = sqlContext.createDataFrame(rdd_score).toDF("reviewer_index", "g_score_vector").sort("reviewer_index", ascending = True)
 
-	#df_g_score.show()
+	df_g_score.show()
 
 
 
