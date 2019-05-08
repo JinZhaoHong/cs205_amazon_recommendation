@@ -62,6 +62,7 @@ print("Building Dense NN...")
 model = Sequential()
 model.add(Dense(200, input_dim=X_train.shape[1], activation='relu'))
 model.add(Dense(200, activation='relu'))
+model.add(Dense(200, activation='relu'))
 model.add(Dense(1))
 
 print(model.summary())
